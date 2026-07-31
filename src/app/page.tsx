@@ -54,6 +54,8 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredEvents, setFilteredEvents] = useState(EVENT_DATA);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [isAiThinking, setIsAiThinking] = useState(false);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
 
   // --- INFRASTRUCTURE STATE ---
   const [issues, setIssues] = useState<any[]>([]);
@@ -73,14 +75,15 @@ export default function Dashboard() {
     if (activeCategory !== "All") {
       result = result.filter(e => e.category === activeCategory);
     }
-    if (searchQuery) {
+    // Only apply manual text filter if AI is not active
+    if (searchQuery && !aiMessage && !isAiThinking) {
       result = result.filter(e => 
         e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
         e.location.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
     setFilteredEvents(result);
-  }, [activeCategory, searchQuery]);
+  }, [activeCategory, searchQuery, aiMessage, isAiThinking]);
 
   // Infra Logic
   const addLog = (message: string) => {
@@ -203,12 +206,56 @@ export default function Dashboard() {
                 </div>
                 <input
                   type="text"
-                  placeholder="Search events, locations..."
-                  className="w-full bg-black/50 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all placeholder:text-neutral-600"
+                  placeholder="Ask AI (e.g. 'cari event musik terdekat')..."
+                  className="w-full bg-black/50 border border-pink-500/30 rounded-xl py-2.5 pl-10 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/70 transition-all placeholder:text-neutral-500 text-white"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    if (aiMessage) setAiMessage(null);
+                  }}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter' && searchQuery.trim()) {
+                      setIsAiThinking(true);
+                      setAiMessage(null);
+                      try {
+                        const res = await fetch('/api/chat', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ message: searchQuery })
+                        });
+                        const data = await res.json();
+                        if (data.success && data.result) {
+                          setAiMessage(data.result.reply);
+                          if (data.result.eventId) {
+                            const found = EVENT_DATA.find(ev => ev.id === data.result.eventId);
+                            if (found) {
+                              setSelectedEvent(found);
+                              if (activeCategory !== 'All' && found.category !== activeCategory) {
+                                setActiveCategory('All');
+                              }
+                            }
+                          }
+                        }
+                      } catch (err) {
+                        console.error(err);
+                      }
+                      setIsAiThinking(false);
+                    }
+                  }}
                 />
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                  <div className={`w-2 h-2 rounded-full ${isAiThinking ? 'bg-pink-500 animate-ping' : 'bg-pink-500/20'}`} title="AI Ready"></div>
+                </div>
               </div>
+
+              {aiMessage && (
+                <div className="mb-4 p-3 bg-pink-500/10 border border-pink-500/20 rounded-xl text-xs text-pink-100 flex items-start space-x-2 animate-in fade-in slide-in-from-top-2">
+                  <div className="p-1 bg-pink-500/20 rounded-md">
+                    <Radar className="w-3 h-3 text-pink-400" />
+                  </div>
+                  <p className="flex-1 leading-relaxed">{aiMessage}</p>
+                </div>
+              )}
 
               <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
                 {CATEGORIES.map(cat => (
